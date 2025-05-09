@@ -46,25 +46,34 @@ contract TinyBank {
     }
 
     // who, when?
-    function distributeReward(address to) internal {
-        uint256 blocks = block.number - lastClaimedBlock[to];
-        uint256 reward = (blocks * rewardPerBlock * staked[to]) / totalStaked;
-        stakingToken.mint(reward, to);
-        lastClaimedBlock[to] = block.number;
+    // initialize, genesis staking
+    // 언제 totalStaked가 0인가?
+    // 1.최초의 staking 할 때 (맨 첫사람이 stake함수를 호출 할 때) -> 맨 처음사람만 고려하면 된다
+    // 2.마지막 사람이 withdraw할때 -> totalStaked 전에 updateReward 호출하기 떄문에 상관없음
+    // modifer - 함수가 아니다
+    // 기본적으로 scope는 internal
+    // 외부에서 실행할 수 없다, 트랜잭션으로 direct 호출 할 수 없다.
+    modifier updateReward(address to) {
+        if (staked[to] > 0) {
+            uint256 blocks = block.number - lastClaimedBlock[to];
+            uint256 reward = (blocks * rewardPerBlock * staked[to]) /
+                totalStaked;
+            stakingToken.mint(reward, to);
+        }
+        lastClaimedBlock[to] = block.number; // 실제 내가 staking한 블럭은 빼준다
+        _; // caller's code
     }
 
-    function stake(uint256 _amount) external {
+    function stake(uint256 _amount) external updateReward(msg.sender) {
         require(_amount >= 0, "cannot stake 0 amount");
-        distributeReward(msg.sender);
         stakingToken.transferFrom(msg.sender, address(this), _amount);
         staked[msg.sender] += _amount;
         totalStaked += _amount;
         emit Staked(msg.sender, _amount);
     }
 
-    function withdraw(uint256 _amount) external {
+    function withdraw(uint256 _amount) external updateReward(msg.sender) {
         require(staked[msg.sender] >= _amount, "insufficient staked token");
-        distributeReward(msg.sender);
         stakingToken.transfer(_amount, msg.sender);
         staked[msg.sender] -= _amount;
         totalStaked -= _amount;
