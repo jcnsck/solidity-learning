@@ -8,6 +8,8 @@ describe("TinyBank", () => {
   let signers: HardhatEthersSigner[];
   let myTokenC: MyToken;
   let tinyBankC: TinyBank;
+  let managers: HardhatEthersSigner[];
+  const MANAGER_NUMBER = 3;
   beforeEach(async () => {
     signers = await hre.ethers.getSigners();
     myTokenC = await hre.ethers.deployContract("MyToken", [
@@ -16,7 +18,13 @@ describe("TinyBank", () => {
       DECIMALS,
       MINTING_AMOUNT,
     ]);
+    const manager0 = signers[0];
+    const manager1 = signers[1];
+    const manager2 = signers[2];
+    managers = [manager0, manager1, manager2];
     tinyBankC = await hre.ethers.deployContract("TinyBank", [
+      managers.map((manager) => manager.address),
+      MANAGER_NUMBER,
       await myTokenC.getAddress(),
     ]);
     await myTokenC.setManager(tinyBankC.getAddress());
@@ -78,7 +86,37 @@ describe("TinyBank", () => {
       const rewardToChange = hre.ethers.parseUnits("10000", DECIMALS);
       await expect(
         tinyBankC.connect(hacker).setRewardPerBlock(rewardToChange)
-      ).to.be.revertedWith("You are not authorized to manage this contract");
+      ).to.be.revertedWith("Not all confirmed yet");
+    });
+  });
+  describe("multi manager", async () => {
+    it("should all manager confirmed", async () => {
+      const rewardToChange = hre.ethers.parseUnits("100", DECIMALS);
+
+      await tinyBankC.connect(managers[0]).confirm();
+      await tinyBankC.connect(managers[1]).confirm();
+      await tinyBankC.connect(managers[2]).confirm();
+
+      await expect(
+        tinyBankC.connect(managers[0]).setRewardPerBlock(rewardToChange)
+      ).to.be.not.reverted;
+    });
+    it("should revert setReward when not all managers have confirmed", async () => {
+      const rewardToChange = hre.ethers.parseUnits("100", DECIMALS);
+
+      await tinyBankC.connect(managers[0]).confirm();
+      await tinyBankC.connect(managers[1]).confirm();
+
+      await expect(
+        tinyBankC.connect(managers[2]).setRewardPerBlock(rewardToChange)
+      ).to.be.revertedWith("Not all confirmed yet");
+    });
+    it("should revert when non-manager tries to confirm", async () => {
+      const hacker = signers[4];
+
+      await expect(tinyBankC.connect(hacker).confirm()).to.be.revertedWith(
+        "You are not a managers"
+      );
     });
   });
 });
